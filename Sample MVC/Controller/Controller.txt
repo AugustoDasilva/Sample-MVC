@@ -1,0 +1,261 @@
+public PartialViewResult _Report(int query, string type, string location, Nullable<DateTime> bdate, Nullable<DateTime> edate)
+        {
+            var QDS = getQuery(query, type, location, bdate, edate);
+            DataSet ds = new DataSet();
+            string constr = ConfigurationManager.ConnectionStrings["DATABASE"].ConnectionString;
+            using (SqlConnection con = new SqlConnection(constr))
+            {
+                SqlCommand cmd = new SqlCommand(QDS.GetQuery(), con);
+                if (QDS.GetParameterCount() > 0)
+                {
+                    List<SqlParameter> sql = QDS.GetParameters();
+                    cmd.Parameters.AddRange(sql.ToArray());
+                }
+                SqlDataAdapter sd = new SqlDataAdapter(cmd);
+                DataTable dt = new DataTable();
+
+                con.Open();
+                sd.Fill(ds);
+            }
+            return PartialView(ds);
+        }
+
+public DataBaseHelper getQuery(int query, string type, string location, Nullable<DateTime> bdate, Nullable<DateTime> edate)
+        {
+            DataBaseHelper dataBaseHelper = new DataBaseHelper();
+            if (type != null && type.Length > 0)
+            {
+                dataBaseHelper.AddParameters("@type", SqlDbType.NVarChar, type);
+            }
+            if (location != null && location.Length > 0)
+            {
+                dataBaseHelper.AddParameters("@location", SqlDbType.NVarChar, location);
+            }
+            if (bdate != null)
+            {
+                dataBaseHelper.AddParameters("@bdate", SqlDbType.DateTime, bdate);
+            }
+            if (edate != null)
+            {
+                dataBaseHelper.AddParameters("@edate", SqlDbType.DateTime, edate);
+            }
+            string querystring = string.Empty;
+
+            switch (query)
+            {
+                case 1:
+						//This ss creating two tables based on user choice of City, Processing, or both. Table 1, contains a broke down list of information for the user based on two tables. Table 2, is a summary table currently containing the sum of table 1. 
+                    if (type == "City")
+                    {
+                        querystring = "SELECT DISTINCT C.CHECKNUM as [Check Number],C.CHECKDATE as [Check Date],C.CITYCODE as [Port Code],C.AMOUNT as [AMOUNT],C.DATE as [Date],C.Number as [Entry Number],C.STATUS as [Check Status],C.REMARKS as[Comments]" +
+                               "FROM CHECKSTABLE C,ADDRESS I " +
+                               "GROUP BY C.CHECKNUM,C.AMOUNT,C.CHECKDATE,C.CITYCODE,C.AUTHOR,C.APPROVED,C.Number,C.DATE,C.STATUS,C.WRITTEN_BY,C.REMARKS,I.CITY_CODE,I.CITY_NAME " +
+                               "HAVING(C.CHECKDATE BETWEEN @bdate AND @edate) AND (C.APPROVED IS NOT NULL) AND ( C.WRITTEN_BY = I.CITY_CODE) ";
+
+                        if (location != "All")
+                        {
+                            querystring = querystring + "AND C.WRITTEN_BY = @location ";
+                        }
+
+                        querystring = querystring + "SELECT SUM(C.AMOUNT) as [Total Amount]" +
+                             " FROM CHECKSTABLE C,ADDRESS I " +
+                                      "where (C.CHECKDATE BETWEEN @bdate AND @edate) AND (C.APPROVED IS NOT NULL) AND ( C.WRITTEN_BY = I.CITY_CODE) ";
+
+                        if (location != "All")
+                        {
+                            querystring = querystring + "AND C.WRITTEN_BY = @location";
+                        }
+                    }
+
+                    if (type == "Processing" || type == "Port & Processing")
+                    {
+                        querystring = "SELECT DISTINCT C.CHECKNUM as [Check Number],C.CHECKDATE as [Check Date],C.WRITTEN_BY as [Check Written By],C.CITYCODE as [Check Written For],C.AMOUNT as [AMOUNT],C.DATE as [Date],C.Number as [Entry Number],C.STATUS as [Check Status],C.REMARKS as[Comments]" +
+                                  "FROM CHECKSTABLE C,ADDRESS I " +
+                                  "GROUP BY C.CHECKNUM,C.AMOUNT,C.CHECKDATE,C.CITYCODE,C.AUTHOR,C.APPROVED,C.Number,C.DATE,C.STATUS,C.WRITTEN_BY,C.REMARKS,I.CITY_CODE,I.CITY_NAME " +
+                                  "HAVING(C.CHECKDATE BETWEEN @bdate AND @edate) AND (C.APPROVED IS NOT NULL) AND ( C.WRITTEN_BY = I.CITY_CODE) ";
+
+                        if (location != "All")
+                        {
+                            querystring = querystring + "AND C.WRITTEN_BY = @location ";
+                        }
+
+                        querystring = querystring + "SELECT SUM(C.AMOUNT) as [Total Amount]" +
+                             "FROM CHECKSTABLE C,ADDRESS I " +
+                                      "where (C.CHECKDATE BETWEEN @bdate AND @edate) AND (C.APPROVED IS NOT NULL) AND ( C.WRITTEN_BY = I.CITY_CODE) ";
+
+                        if (location != "All")
+                        {
+                            querystring = querystring + "AND C.WRITTEN_BY = @location";
+                        }
+                    }
+                    break;
+
+                case 5:
+					//Similar to Case 1, this query brings out two table one with the broad information and one that is compact.
+				
+                    if (type == "City")
+                    {
+                        querystring = @"SELECT DISTINCT
+                                        CHECKSTABLE.CHECKNUM as [Check Number], 
+                                        CHECKSTABLE.CHECKDATE as [Check Date],
+
+                                        CHECKSTABLE.AMOUNT as [AMOUNT],
+                                        CHECKSTABLE.TRACKINGNUM as [Tracking Number],
+                                        CHECKSTABLE.Number as [Entry Number]
+
+                                        FROM CHECKSTABLE, ENTRY 
+                                        WHERE CHECKSTABLE.checkdate BETWEEN @bdate AND @edate 
+                                        AND CHECKSTABLE.STATUS = 'Other'";
+
+                        if (location != "All")
+                        {
+                            querystring = querystring + " AND UPPER(CHECKSTABLE.CITYCODE) = UPPER(ENTRY.CITY_CODE) AND UPPER(CHECKSTABLE.CITYCODE) = UPPER(@location)";
+                        }
+
+
+                        querystring = querystring + @" select sum(f.CC) as [Total Amount] From (SELECT DISTINCT CHECKSTABLE.AMOUNT as CC,CHECKSTABLE.CHECKNUM from CHECKSTABLE,ENTRY 
+										WHERE CHECKSTABLE.checkdate BETWEEN @bdate AND @edate
+                                        AND CHECKSTABLE.STATUS = 'Other'";
+
+                        if (location != "All")
+                        {
+                            querystring = querystring + " AND UPPER(CHECKSTABLE.CITYCODE) = UPPER(ENTRY.CITY_CODE) AND UPPER(CHECKSTABLE.CITYCODE) = UPPER(@location) GROUP BY CHECKSTABLE.AMOUNT,CHECKSTABLE.CHECKNUM) F";
+                        }
+                        else
+                        {
+                            querystring = querystring + ") F";
+                        }
+                    }
+
+                    if (type == "Processing" || type == "City & Processing")
+                    {
+                        querystring = @"SELECT
+                                        CHECKSTABLE.CHECKNUM as [Check Number], 
+                                        CHECKSTABLE.CHECKDATE as [Check Date], 
+                                        CHECKSTABLE.WRITTEN_BY as [Check Written By],
+                                        CHECKSTABLE.CITYCODE as [Check Written For], 
+                                        CHECKSTABLE.AMOUNT as [AMOUNT], 
+                                        CHECKSTABLE.TRACKINGNUM as [Tracking Number], 
+                                        CHECKSTABLE.Number as [Entry Number]
+
+                                        FROM CHECKSTABLE INNER JOIN  ENTRY ON CHECKSTABLE.CITYCODE = ENTRY.CITY_CODE
+                                        WHERE (CHECKSTABLE.STATUS = 'Other') AND (CHECKSTABLE.AMOUNT > 0)
+                                        AND (CHECKSTABLE.CHECKDATE BETWEEN @bdate AND @edate)
+                                        AND (CHECKSTABLE.WRITTEN_BY = @location)
+                                        group by CHECKSTABLE.CHECKNUM, CHECKSTABLE.CHECKDATE, CHECKSTABLE.WRITTEN_BY,
+                                        CHECKSTABLE.CITYCODE, CHECKSTABLE.AMOUNT, CHECKSTABLE.TRACKINGNUM,CHECKSTABLE.Number";
+
+                        querystring = querystring + @" select sum(f.CC) as [Total Amount] From (SELECT CHECKSTABLE.AMOUNT as CC,CHECKSTABLE.CHECKNUM                                         
+                                        FROM CHECKSTABLE INNER JOIN  ENTRY ON CHECKSTABLE.CITYCODE = ENTRY.CITY_CODE
+                                        WHERE (CHECKSTABLE.STATUS = 'Other') AND (CHECKSTABLE.AMOUNT > 0)
+                                        AND (CHECKSTABLE.CHECKDATE BETWEEN '2004-09-01 00:00:00.000' AND '2004-11-01 00:00:00.000')
+                                        AND (CHECKSTABLE.WRITTEN_BY = 'location') Group by CHECKSTABLE.CHECKNUM,CHECKSTABLE.AMOUNT) F";
+                    }
+
+                    break;
+            }
+            dataBaseHelper.SetQuery(querystring);
+            return dataBaseHelper;
+        }
+		
+public ActionResult _AddToCHECKSTABLE(string port)
+        {
+            APTables AP = new APTables();
+
+			
+			// This query was the most interesting that  I created. The cursor creates a new table that increments all checks starting with the low check to high check number. 
+			//that then compares it self to the main to make sure a check has not been created.
+			// The value is then passed to the webpage to display the next unused check.
+            string query = @"
+                            UPDATE
+                            CHECKSTABLE 
+                            SET PARENT_CITYCODE = (SELECT B.CITYCODE FROM CHECKBATCH B WHERE CHECKSTABLE.CHECKNUM BETWEEN B.STARTCKNUM AND B.ENDCKNUM)
+                            WHERE CHECKSTABLE.PARENT_CITYCODE IS NULL
+
+                            BEGIN TRY
+                            TRUNCATE TABLE #MIN_CHECKS_TEST
+                            END TRY
+                            BEGIN CATCH
+                            BEGIN
+                            CREATE TABLE #MIN_CHECKS_TEST
+                            (
+                            CHECKNUM INT,
+                            BATCH_SEQ_NR INT
+                            )
+                            END
+                            END CATCH
+	
+                            DECLARE @L_STARTCKNUM INT
+                            DECLARE @L_ENDCKNUM INT
+                            DECLARE @MINPORT INT
+                            DECLARE @MAXPORT INT
+                            DECLARE @BATCH_SEQ_NR INT
+                            DECLARE @I INT 
+	
+                            DECLARE TESTQ CURSOR FOR
+                            SELECT	VERIFYSTARTCKNUM as STARTCKNUM, VERIFYENDCKNUM as ENDCKNUM,SEQ_NR
+                            FROM	CHECKBATCH C WHERE C.CITYCODE = '" + port + @"'
+
+                            BEGIN
+                            OPEN TESTQ
+                            FETCH NEXT FROM TESTQ INTO @L_STARTCKNUM,@L_ENDCKNUM,@BATCH_SEQ_NR 
+                            WHILE(@@FETCH_STATUS = 0)
+
+                            BEGIN
+
+                            SET @MINPORT = @L_STARTCKNUM
+                            SET @MAXPORT = @L_ENDCKNUM
+	
+                            SELECT @I = @MINPORT - 1
+                            WHILE @I <= @MAXPORT - 1
+                            BEGIN 
+
+                            SET @I = @I + 1	
+
+                            INSERT  INTO #MIN_CHECKS_TEST
+
+                            (CHECKNUM,BATCH_SEQ_NR) 
+                            VALUES
+					
+                            (@I,@BATCH_SEQ_NR)
+				
+                            END 
+
+                            FETCH NEXT FROM TESTQ INTO @L_STARTCKNUM,@L_ENDCKNUM,@BATCH_SEQ_NR  
+                            END
+                            CLOSE TESTQ
+                            DEALLOCATE TESTQ
+                            END
+
+                            SELECT TOP 1 A.CHECKNUM FROM #MIN_CHECKS_TEST A
+
+                            LEFT JOIN
+
+                            (SELECT	C.CHECKNUM
+                            FROM	CHECKSTABLE C
+                            WHERE	C.PARENT_CITYCODE = '" + port + @"') B
+
+                            ON A.CHECKNUM = B.CHECKNUM
+                            WHERE B.CHECKNUM IS NULL
+		
+                            ORDER BY A.CHECKNUM ASC
+                            ";
+
+            IEnumerable<...Models.2> check = db.Database.SqlQuery<...Models.2>(query);
+            AP.2 = check;
+
+            if (AP.2.Count() == 0)
+            {
+                return RedirectToAction("_NoCheck");
+            }
+
+            string Port = "SELECT distinct [CITY_NAME],CITY_CODE FROM [BROKACCT].[dbo].[ADDRESS] where CITY_CODE = '" + port + "'";
+            IEnumerable<..ADDRESS> UserPorts = db.Database.SqlQuery<..ADDRESS>(Port);
+            AP.Ports = UserPorts;
+            string Status = "SELECT DISTINCT STATUS FROM STATUS ORDER BY STATUS";
+            IEnumerable<..STATUS2> ck = db.Database.SqlQuery<..STATUS2>(Status);
+            AP.STATUS = ck;
+
+            return View(AP);
+        }
+	
